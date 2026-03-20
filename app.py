@@ -195,8 +195,8 @@ def train_and_evaluate_models():
     best_models["Decision Tree"] = best_dt
 
     #4. model (Random Forest Regressor)
-           rf_grid = GridSearchCV(
-            RandomForestRegressor(random_state=42),
+        rf_grid = GridSearchCV(
+        RandomForestRegressor(random_state=42),
             {
                 "n_estimators": [50, 100, 200],
                 "max_depth": [5, 10, None],
