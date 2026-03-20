@@ -195,21 +195,21 @@ def train_and_evaluate_models():
     best_models["Decision Tree"] = best_dt
 
     #4. model (Random Forest Regressor)
-        rf_grid = GridSearchCV(
+    rf_grid = GridSearchCV(
         RandomForestRegressor(random_state=42),
-            {
-                "n_estimators": [50, 100, 200],
-                "max_depth": [5, 10, None],
-                "min_samples_split": [2, 5],
-                "min_samples_leaf": [1, 2],
-            },
-            cv=5,
-            scoring="r2",
-            n_jobs=-1,
-        )
-        rf_grid.fit(Xtrain, ytrain)
-        best_rf = rf_grid.best_estimator_
-        rf_best_params = str(rf_grid.best_params_)
+        {
+            "n_estimators": [50, 100, 200],
+            "max_depth": [5, 10, None],
+            "min_samples_split": [2, 5],
+            "min_samples_leaf": [1, 2],
+        },
+        cv=5,
+        scoring="r2",
+        n_jobs=-1,
+    )
+    rf_grid.fit(Xtrain, ytrain)
+    best_rf = rf_grid.best_estimator_
+    rf_best_params = str(rf_grid.best_params_)
 
     pred_rf = best_rf.predict(Xtest)
     mae, rmse, r2 = evaluate_model(ytest, pred_rf)
