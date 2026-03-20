@@ -482,15 +482,25 @@ elif menu == "Model Performance":
     )
 
     st.info(
-        "Saved models from the notebook are evaluated here on the same train-test split used for app benchmarking."
+        "All models are compared here because this is the most appropriate section for benchmarking and evaluation."
     )
 
     display_df = results_df.copy()
+
+    # remove CV columns if they are empty / None
+    if "CV_RMSE" in display_df.columns and display_df["CV_RMSE"].isna().all():
+        display_df = display_df.drop(columns=["CV_RMSE"], errors="ignore")
+    if "CV_R2" in display_df.columns and display_df["CV_R2"].isna().all():
+        display_df = display_df.drop(columns=["CV_R2"], errors="ignore")
+
     for col in ["MAE", "RMSE", "R2", "CV_RMSE", "CV_R2"]:
         if col in display_df.columns:
             display_df[col] = display_df[col].round(4)
+
     st.dataframe(display_df, use_container_width=True)
-    st.caption("Baseline is included for comparison. Saved models are loaded from joblib files for deployment.")
+    st.caption(
+        "Baseline is included for comparison. Hyperparameter tuning and cross-validation details are discussed in the notebook and report."
+    )
 
     c1, c2 = st.columns(2)
     with c1:
@@ -521,12 +531,10 @@ elif menu == "Model Performance":
 
     rf_model = best_models["Random Forest"]
     if hasattr(rf_model, "feature_importances_"):
-        fi = pd.DataFrame(
-            {
-                "Feature": model_bundle["Xtrain"].columns,
-                "Importance": rf_model.feature_importances_,
-            }
-        ).sort_values("Importance", ascending=False).head(15)
+        fi = pd.DataFrame({
+            "Feature": model_bundle["Xtrain"].columns,
+            "Importance": rf_model.feature_importances_,
+        }).sort_values("Importance", ascending=False).head(15)
 
         fig, ax = plt.subplots(figsize=(9, 6))
         sns.barplot(data=fi, x="Importance", y="Feature", ax=ax)
