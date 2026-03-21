@@ -489,11 +489,14 @@ elif menu == "Model Performance":
     )
 
     display_df = results_df.copy()
-    for col in ["MAE", "RMSE", "R2", "CV_RMSE", "CV_R2"]:
-        if col in display_df.columns:
-            display_df[col] = display_df[col].round(4)
-    st.dataframe(display_df, use_container_width=True)
-    st.caption("Baseline is included for comparison. Saved models are loaded from joblib files for deployment.")
+    
+    numeric_cols = ["MAE", "RMSE", "R2", "CV_RMSE", "CV_R2"]
+    
+    for col in numeric_cols:
+        display_df[col] = pd.to_numeric(display_df[col], errors="coerce")
+        display_df[col] = display_df[col].round(4)
+        st.dataframe(display_df, use_container_width=True)
+        st.caption("Baseline is included for comparison. Saved models are loaded from joblib files for deployment.")
 
     c1, c2 = st.columns(2)
     with c1:
