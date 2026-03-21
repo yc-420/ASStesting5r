@@ -112,6 +112,9 @@ def load_saved_models():
         "feature_columns": joblib.load(FEATURE_PATH),
     }
 
+@st.cache_data
+def load_results():
+    return pd.read_csv("model_results_summary.csv")
 
 @st.cache_resource
 def evaluate_saved_models():
@@ -219,7 +222,7 @@ def get_prediction_status(gap: float):
 
 raw_df, original_missing_wip = load_raw_data()
 model_bundle = evaluate_saved_models()
-results_df = model_bundle["results_df"]
+results_df = load_results()
 feature_cols = model_bundle["feature_columns"]
 best_models = model_bundle["best_models"]
 best_model_row = results_df.sort_values("RMSE").iloc[0]
