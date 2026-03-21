@@ -9,191 +9,241 @@ import pandas as pd
 import seaborn as sns
 import streamlit as st
 from sklearn.dummy import DummyRegressor
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV, cross_val_score, train_test_split
+from sklearn.tree import DecisionTreeRegressor
 
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore") #igonore warning
 sns.set_style("whitegrid")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) #read path
 DATA_PATH = os.path.join(BASE_DIR, "garments_worker_productivity.csv")
-LIN_MODEL_PATH = os.path.join(BASE_DIR, "lin_model.joblib")
-RIDGE_MODEL_PATH = os.path.join(BASE_DIR, "ridge_model.joblib")
-DT_MODEL_PATH = os.path.join(BASE_DIR, "dt_model.joblib")
 RF_MODEL_PATH = os.path.join(BASE_DIR, "rf_model.joblib")
-FEATURE_PATH = os.path.join(BASE_DIR, "feature_columns.joblib")
 
-QUARTER_CATS = ["Quarter1", "Quarter2", "Quarter3", "Quarter4", "Quarter5"]
+QUARTER_CATS = ["Quarter1", "Quarter2", "Quarter3", "Quarter4", "Quarter5"] #know variable categories & sequence
 DEPARTMENT_CATS = ["finishing", "sewing"]
 DAY_CATS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Saturday", "Sunday"]
 
-st.set_page_config(page_title="Garment Worker Productivity Dashboard", layout="wide")
+st.set_page_config(page_title="Garment Worker Productivity Dashboard", layout="wide") #set configuration
 
 
-def evaluate_model(y_true, y_pred):
-    mae = mean_absolute_error(y_true, y_pred)
-    rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-    r2 = r2_score(y_true, y_pred)
+#Formula save here, no need to repeat writing the formula 
+def evaluate_model(y_true, y_pred): 
+    mae = mean_absolute_error(y_true, y_pred) #Formula: (actual-prediction)
+    rmse = np.sqrt(mean_squared_error(y_true, y_pred)) #square. Put punishment 
+    r2 = r2_score(y_true, y_pred) #variable affection
     return mae, rmse, r2
 
 
-@st.cache_data
+    #Store the result of data loading
+@st.cache_data 
 def load_raw_data():
     original_df = pd.read_csv(DATA_PATH)
     original_missing_wip = int(original_df["wip"].isna().sum())
 
-    # Data preparation used for EDA and app display
-    df = original_df.copy()
-    df["department"] = (
-        df["department"]
-        .astype(str)
-        .str.strip()
-        .str.lower()
-        .replace({"sweing": "sewing"})
-    )
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    df["day"] = df["date"].dt.day_name()
-    df["wip"] = df["wip"].fillna(0)
+    #Data Preparation 
+    df = original_df.copy()  
+    df["department"] = (df["department"]
+        .astype(str) #String
+        .str.strip() #Remove Space 
+        .str.lower() #lowercase 
+        .replace({"sweing": "sewing"}))
+    
+    df["date"] = pd.to_datetime(df["date"], errors="coerce") #Datetime variable, invalid date values are converted to missing values
+    df["day"] = df["date"].dt.day_name() #Date connect with day
+    df["wip"] = df["wip"].fillna(0) #Missing WIP values are filled with 0, assuming no work in progress was recorded.
 
     return df, original_missing_wip
 
 
 @st.cache_data
 def build_model_dataframe():
-    df, _ = load_raw_data()
-    model_df = df.copy()
+    df, _ = load_raw_data() #df, not use original_missing_wip
+    model_df = df.copy() #A copy of the original dataset is created to avoid modifying the raw data directly
 
     model_df["quarter"] = pd.Categorical(model_df["quarter"], categories=QUARTER_CATS)
     model_df["department"] = pd.Categorical(model_df["department"], categories=DEPARTMENT_CATS)
     model_df["day"] = pd.Categorical(model_df["day"], categories=DAY_CATS)
 
-    model_df = pd.get_dummies(
-        model_df,
-        columns=["quarter", "department", "day"],
+    model_df = pd.get_dummies(model_df, columns=["quarter", "department", "day"], 
         drop_first=True,
     )
     model_df = model_df.drop(columns=["date"])
-    model_df.columns = model_df.columns.str.strip()
+    model_df.columns = model_df.columns.str.strip() #Make sure no space
     return model_df
 
 
 @st.cache_data
 def get_column_details():
-    return pd.DataFrame(
-        [
-            ["date", "Production date", "datetime"],
-            ["quarter", "Production quarter", "categorical"],
-            ["department", "Department name", "categorical"],
-            ["team", "Team number", "numeric"],
-            ["targeted_productivity", "Target productivity rate", "numeric"],
-            ["smv", "Standard Minute Value", "numeric"],
-            ["wip", "Work in progress", "numeric"],
-            ["over_time", "Overtime minutes", "numeric"],
-            ["incentive", "Incentive amount", "numeric"],
-            ["idle_time", "Idle time", "numeric"],
-            ["idle_men", "Number of idle workers", "numeric"],
-            ["no_of_style_change", "Count of style changes", "numeric"],
-            ["no_of_workers", "Number of workers", "numeric"],
-            ["actual_productivity", "Actual productivity achieved", "target"],
-            ["day", "Day name derived from date", "derived categorical"],
-        ],
-        columns=["Feature", "Description", "Type"],
-    )
+    return pd.DataFrame([
+        ["date", "Production date", "datetime"],
+        ["quarter", "Production quarter", "categorical"],
+        ["department", "Department name", "categorical"],
+        ["team", "Team number", "numeric"],
+        ["targeted_productivity", "Target productivity rate", "numeric"],
+        ["smv", "Standard Minute Value", "numeric"],
+        ["wip", "Work in progress", "numeric"],
+        ["over_time", "Overtime minutes", "numeric"],
+        ["incentive", "Incentive amount", "numeric"],
+        ["idle_time", "Idle time", "numeric"],
+        ["idle_men", "Number of idle workers", "numeric"],
+        ["no_of_style_change", "Count of style changes", "numeric"],
+        ["no_of_workers", "Number of workers", "numeric"],
+        ["actual_productivity", "Actual productivity achieved", "target"],
+        ["day", "Day name derived from date", "derived categorical"],
+    ], columns=["Feature", "Description", "Type"])
 
-
-@st.cache_resource
-def load_saved_models():
-    # Final trained models saved from notebook
-    return {
-        "Linear Regression": joblib.load(LIN_MODEL_PATH),
-        "Ridge Regression": joblib.load(RIDGE_MODEL_PATH),
-        "Decision Tree": joblib.load(DT_MODEL_PATH),
-        "Random Forest": joblib.load(RF_MODEL_PATH),
-        "feature_columns": joblib.load(FEATURE_PATH),
-    }
-
-@st.cache_data
-def load_results():
-    return pd.read_csv("model_results_summary.csv")
-
-@st.cache_resource
-def evaluate_saved_models():
+#baseline (dummyregressor)
+#1. model (Linear Regression)
+@st.cache_resource #avoid reruns
+def train_and_evaluate_models():
     model_df = build_model_dataframe()
-    X = model_df.drop("actual_productivity", axis=1)
-    y = model_df["actual_productivity"]
+    X = model_df.drop("actual_productivity", axis=1) #remove target variable from features to prevent data leakage
+    y = model_df["actual_productivity"] 
 
     Xtrain, Xtest, ytrain, ytest = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
-    loaded = load_saved_models()
-    feature_cols = loaded["feature_columns"]
-    best_models = {
-        "Linear Regression": loaded["Linear Regression"],
-        "Ridge Regression": loaded["Ridge Regression"],
-        "Decision Tree": loaded["Decision Tree"],
-        "Random Forest": loaded["Random Forest"],
-    }
-
-    # Keep train/test columns aligned with saved models
-    Xtrain_eval = Xtrain.reindex(columns=feature_cols, fill_value=0)
-    Xtest_eval = Xtest.reindex(columns=feature_cols, fill_value=0)
-
     results = []
     predictions: Dict[str, np.ndarray] = {}
+    best_models = {}
 
-    baseline = DummyRegressor(strategy="mean")
-    baseline.fit(Xtrain_eval, ytrain)
-    pred_base = baseline.predict(Xtest_eval)
-    mae, rmse, r2 = evaluate_model(ytest, pred_base)
-    results.append(
-        {
-            "Model": "Baseline",
+    models = {
+        "Baseline": DummyRegressor(strategy="mean"), #Build baseline mode (predict mean)
+        "Linear Regression": LinearRegression(),
+    }
+
+    # cross-validation
+    for model_name, model in models.items():
+        model.fit(Xtrain, ytrain) #Training through y and x
+        pred = model.predict(Xtest)
+        mae, rmse, r2 = evaluate_model(ytest, pred)
+        cv_rmse = -cross_val_score(
+            model, Xtrain, ytrain, cv=5, scoring="neg_root_mean_squared_error"
+        ).mean() 
+        cv_r2 = cross_val_score(model, Xtrain, ytrain, cv=5, scoring="r2").mean()
+
+        #save 
+        results.append({
+            "Model": model_name,
             "MAE": mae,
             "RMSE": rmse,
             "R2": r2,
-            "CV_RMSE": np.nan,
-            "CV_R2": np.nan,
-            "Best Parameters": "Mean strategy",
-        }
-    )
-    predictions["Baseline"] = pred_base
-
-    for model_name, model in best_models.items():
-        pred = model.predict(Xtest_eval)
-        mae, rmse, r2 = evaluate_model(ytest, pred)
-        results.append(
-            {
-                "Model": model_name,
-                "MAE": mae,
-                "RMSE": rmse,
-                "R2": r2,
-                "CV_RMSE": np.nan,
-                "CV_R2": np.nan,
-                "Best Parameters": "Loaded from joblib",
-            }
-        )
+            "CV_RMSE": cv_rmse,
+            "CV_R2": cv_r2,
+            "Best Parameters": "Mean strategy" if model_name == "Baseline" else "Default",
+        })
         predictions[model_name] = pred
+        best_models[model_name] = model
+        
+    #Find best parameter
+    #2. Ridge Regression
+    ridge_grid = GridSearchCV(
+        Ridge(),
+        {"alpha": [0.01, 0.1, 1, 10, 100]}, cv=5, scoring="r2", n_jobs=-1,)
+    
+    ridge_grid.fit(Xtrain, ytrain)
+    best_ridge = ridge_grid.best_estimator_
+    pred_ridge = best_ridge.predict(Xtest)
+    
+    mae, rmse, r2 = evaluate_model(ytest, pred_ridge) #extract formula 
+    cv_rmse = -cross_val_score(best_ridge, Xtrain, ytrain, cv=5, scoring="neg_root_mean_squared_error").mean()
+    cv_r2 = cross_val_score(best_ridge, Xtrain, ytrain, cv=5, scoring="r2").mean()
+    results.append({
+        "Model": "Ridge Regression",
+        "MAE": mae,
+        "RMSE": rmse,
+        "R2": r2,
+        "CV_RMSE": cv_rmse,
+        "CV_R2": cv_r2,
+        "Best Parameters": str(ridge_grid.best_params_),
+    })
+    predictions["Ridge Regression"] = pred_ridge
+    best_models["Ridge Regression"] = best_ridge
+
+    #3. model (Decision Tree Regressor)
+    dt_grid = GridSearchCV(
+        DecisionTreeRegressor(random_state=42),
+        {
+            "max_depth": [3, 5, 7, 10, None],
+            "min_samples_split": [2, 5, 10],
+            "min_samples_leaf": [1, 2, 4],
+        },
+        cv=5,
+        scoring="r2",
+        n_jobs=-1,
+    )
+    dt_grid.fit(Xtrain, ytrain)
+    best_dt = dt_grid.best_estimator_
+    pred_dt = best_dt.predict(Xtest)
+    mae, rmse, r2 = evaluate_model(ytest, pred_dt)
+    cv_rmse = -cross_val_score(best_dt, Xtrain, ytrain, cv=5, scoring="neg_root_mean_squared_error").mean()
+    cv_r2 = cross_val_score(best_dt, Xtrain, ytrain, cv=5, scoring="r2").mean()
+    results.append({
+        "Model": "Decision Tree",
+        "MAE": mae,
+        "RMSE": rmse,
+        "R2": r2,
+        "CV_RMSE": cv_rmse,
+        "CV_R2": cv_r2,
+        "Best Parameters": str(dt_grid.best_params_),
+    })
+    predictions["Decision Tree"] = pred_dt
+    best_models["Decision Tree"] = best_dt
+
+    #4. model (Random Forest Regressor)
+           rf_grid = GridSearchCV(
+            RandomForestRegressor(random_state=42),
+            {
+                "n_estimators": [50, 100, 200],
+                "max_depth": [5, 10, None],
+                "min_samples_split": [2, 5],
+                "min_samples_leaf": [1, 2],
+            },
+            cv=5,
+            scoring="r2",
+            n_jobs=-1,
+        )
+        rf_grid.fit(Xtrain, ytrain)
+        best_rf = rf_grid.best_estimator_
+        rf_best_params = str(rf_grid.best_params_)
+
+    pred_rf = best_rf.predict(Xtest)
+    mae, rmse, r2 = evaluate_model(ytest, pred_rf)
+    cv_rmse = -cross_val_score(best_rf, Xtrain, ytrain, cv=5, scoring="neg_root_mean_squared_error").mean()
+    cv_r2 = cross_val_score(best_rf, Xtrain, ytrain, cv=5, scoring="r2").mean()
+    results.append({
+        "Model": "Random Forest",
+        "MAE": mae,
+        "RMSE": rmse,
+        "R2": r2,
+        "CV_RMSE": cv_rmse,
+        "CV_R2": cv_r2,
+        "Best Parameters": rf_best_params,
+    })
+    predictions["Random Forest"] = pred_rf
+    best_models["Random Forest"] = best_rf
 
     results_df = pd.DataFrame(results).sort_values("RMSE").reset_index(drop=True)
 
     return {
-        "Xtrain": Xtrain_eval,
-        "Xtest": Xtest_eval,
+        "Xtrain": Xtrain,
+        "Xtest": Xtest,
         "ytrain": ytrain,
         "ytest": ytest,
         "results_df": results_df,
         "predictions": predictions,
         "best_models": best_models,
-        "feature_columns": feature_cols,
+        "feature_columns": list(X.columns),
     }
 
 
 def prepare_prediction_input(input_df: pd.DataFrame, feature_cols: List[str]) -> pd.DataFrame:
     df = input_df.copy()
-    df["department"] = (
-        df["department"].astype(str).str.strip().str.lower().replace({"sweing": "sewing"})
-    )
+    df["department"] = (df["department"].astype(str).str.strip().str.lower().replace({"sweing": "sewing"}))
     df["quarter"] = pd.Categorical(df["quarter"], categories=QUARTER_CATS)
     df["department"] = pd.Categorical(df["department"], categories=DEPARTMENT_CATS)
     df["day"] = pd.Categorical(df["day"], categories=DAY_CATS)
@@ -210,7 +260,7 @@ def prepare_prediction_input(input_df: pd.DataFrame, feature_cols: List[str]) ->
 
 
 def get_prediction_status(gap: float):
-    if gap >= 0.05:
+    if gap >= 0.05: #Tolerance for error
         return "Likely to exceed target", "success"
     elif gap >= 0:
         return "Likely to meet target", "success"
@@ -221,13 +271,13 @@ def get_prediction_status(gap: float):
 
 
 raw_df, original_missing_wip = load_raw_data()
-model_bundle = evaluate_saved_models()
-results_df = load_results()
+model_bundle = train_and_evaluate_models()
+results_df = model_bundle["results_df"]
 feature_cols = model_bundle["feature_columns"]
 best_models = model_bundle["best_models"]
 best_model_row = results_df.sort_values("RMSE").iloc[0]
 
-# App design
+#App design
 st.title("Garment Worker Productivity Dashboard")
 st.caption(
     "BMDS2003 Data Science Project — EDA, model comparison, single prediction, and batch prediction"
@@ -279,17 +329,17 @@ if menu == "Overview":
         "- Converted `date` to datetime and derived `day` from date.\n"
         "- Filled missing `wip` values with 0.\n"
         "- Applied one-hot encoding to categorical features for modelling.\n"
-        "- Saved trained models and feature columns using joblib for deployment."
+        "- Used a fixed category mapping so single and batch predictions remain consistent with training."
     )
 
 elif menu == "Data Exploration":
     st.header("Data Exploration")
-
+    
     st.info(
         "Some records have productivity values above 1, indicating unusually high performance. "
         "These were retained to preserve real-world variability."
     )
-
+    
     eda_df = raw_df.copy()
 
     with st.expander("Filters", expanded=True):
@@ -321,21 +371,22 @@ elif menu == "Data Exploration":
     if filtered_df.empty:
         st.warning("No data available for the selected filters.")
         st.stop()
-
+        
     m1, m2, m3, m4 = st.columns(4)
-
-    q1 = filtered_df["actual_productivity"].quantile(0.25)
-    q3 = filtered_df["actual_productivity"].quantile(0.75)
-    iqr = q3 - q1
+        
+    Q1 = filtered_df["actual_productivity"].quantile(0.25)
+    Q3 = filtered_df["actual_productivity"].quantile(0.75)
+    IQR = Q3 - Q1
     pos = np.where(
-        (filtered_df["actual_productivity"] < (q1 - 1.5 * iqr))
-        | (filtered_df["actual_productivity"] > (q3 + 1.5 * iqr))
+        (filtered_df["actual_productivity"] < (Q1 - 1.5 * IQR)) |
+        (filtered_df["actual_productivity"] > (Q3 + 1.5 * IQR))
     )
-
+        
     m1.metric("Filtered Records", len(filtered_df))
     m2.metric("Average Productivity", f"{filtered_df['actual_productivity'].mean():.3f}")
     m3.metric("Average Target Productivity", f"{filtered_df['targeted_productivity'].mean():.3f}")
     m4.metric("Number of Outliers", len(pos[0]))
+
 
     st.subheader("1. Distribution of the Target Variable")
     c1, c2 = st.columns(2)
@@ -465,6 +516,7 @@ elif menu == "Data Exploration":
         )
 
     team_avg = filtered_df.groupby("team")["actual_productivity"].mean().sort_values()
+
     fig, ax = plt.subplots(figsize=(10, 5))
     team_avg.plot(kind="bar", ax=ax)
     ax.set_title("Average Actual Productivity by Team")
@@ -489,21 +541,10 @@ elif menu == "Model Performance":
     )
 
     display_df = results_df.copy()
-
-    # remove CV columns if they are empty / None
-    if "CV_RMSE" in display_df.columns and display_df["CV_RMSE"].isna().all():
-        display_df = display_df.drop(columns=["CV_RMSE"], errors="ignore")
-    if "CV_R2" in display_df.columns and display_df["CV_R2"].isna().all():
-        display_df = display_df.drop(columns=["CV_R2"], errors="ignore")
-
     for col in ["MAE", "RMSE", "R2", "CV_RMSE", "CV_R2"]:
-        if col in display_df.columns:
-            display_df[col] = display_df[col].round(4)
-
+        display_df[col] = display_df[col].round(4)
     st.dataframe(display_df, use_container_width=True)
-    st.caption(
-        "Baseline is included for comparison. Hyperparameter tuning and cross-validation details are discussed in the notebook and report."
-    )
+    st.caption("Cross-validation results (5-fold) are included to provide a more reliable evaluation of model performance.")
 
     c1, c2 = st.columns(2)
     with c1:
@@ -654,17 +695,15 @@ elif menu == "Single Prediction":
             gap = pred - targeted_productivity
             status_text, status_type = get_prediction_status(gap)
 
-            summary_df = pd.DataFrame(
-                {
-                    "Metric": ["Selected Model", "Target Productivity", "Predicted Productivity", "Gap to Target"],
-                    "Value": [
-                        model_choice,
-                        f"{targeted_productivity:.3f}",
-                        f"{pred:.3f}",
-                        f"{gap:.3f}",
-                    ],
-                }
-            )
+            summary_df = pd.DataFrame({
+                "Metric": ["Selected Model", "Target Productivity", "Predicted Productivity", "Gap to Target"],
+                "Value": [
+                    model_choice,
+                    f"{targeted_productivity:.3f}",
+                    f"{pred:.3f}",
+                    f"{gap:.3f}",
+                ],
+            })
             st.dataframe(summary_df, use_container_width=True, hide_index=True)
 
             if status_type == "success":
@@ -702,12 +741,10 @@ elif menu == "Single Prediction":
             for model_name in ["Linear Regression", "Ridge Regression", "Decision Tree", "Random Forest"]:
                 all_preds[model_name] = float(best_models[model_name].predict(pred_input)[0])
 
-            compare_df = pd.DataFrame(
-                {
-                    "Model": list(all_preds.keys()),
-                    "Predicted Productivity": list(all_preds.values()),
-                }
-            ).sort_values("Predicted Productivity", ascending=False)
+            compare_df = pd.DataFrame({
+                "Model": list(all_preds.keys()),
+                "Predicted Productivity": list(all_preds.values()),
+            }).sort_values("Predicted Productivity", ascending=False)
             compare_df["Predicted Productivity"] = compare_df["Predicted Productivity"].round(4)
 
             st.subheader("All Model Predictions for This Input")
@@ -726,25 +763,21 @@ elif menu == "Batch Prediction":
         "Upload a CSV file with multiple production records to generate productivity predictions."
     )
 
-    template_df = pd.DataFrame(
-        [
-            {
-                "team": 8,
-                "targeted_productivity": 0.80,
-                "smv": 26.16,
-                "wip": 1108,
-                "over_time": 7080,
-                "incentive": 98,
-                "idle_time": 0,
-                "idle_men": 0,
-                "no_of_style_change": 0,
-                "no_of_workers": 59,
-                "quarter": "Quarter1",
-                "department": "sewing",
-                "day": "Monday",
-            }
-        ]
-    )
+    template_df = pd.DataFrame([{
+        "team": 8,
+        "targeted_productivity": 0.80,
+        "smv": 26.16,
+        "wip": 1108,
+        "over_time": 7080,
+        "incentive": 98,
+        "idle_time": 0,
+        "idle_men": 0,
+        "no_of_style_change": 0,
+        "no_of_workers": 59,
+        "quarter": "Quarter1",
+        "department": "sewing",
+        "day": "Monday",
+    }])
 
     st.subheader("Sample Input Format")
     st.dataframe(template_df, use_container_width=True)
@@ -771,19 +804,9 @@ elif menu == "Batch Prediction":
             batch_df["day"] = batch_df["date"].dt.day_name()
 
         keep_cols = [
-            "team",
-            "targeted_productivity",
-            "smv",
-            "wip",
-            "over_time",
-            "incentive",
-            "idle_time",
-            "idle_men",
-            "no_of_style_change",
-            "no_of_workers",
-            "quarter",
-            "department",
-            "day",
+            "team", "targeted_productivity", "smv", "wip", "over_time", "incentive",
+            "idle_time", "idle_men", "no_of_style_change", "no_of_workers",
+            "quarter", "department", "day",
         ]
         missing_cols = [c for c in keep_cols if c not in batch_df.columns]
 
@@ -834,7 +857,8 @@ elif menu == "About":
         - Decision Tree Regressor
         - Random Forest Regressor
         - Model evaluation using MAE, RMSE, and R²
-        - Saved model deployment using joblib
+        - 5-Fold Cross Validation
+        - Hyperparameter tuning using GridSearchCV
 
         **CRISP-DM flow**  
         Business Understanding → Data Understanding → Data Preparation → Modelling → Evaluation → Deployment
